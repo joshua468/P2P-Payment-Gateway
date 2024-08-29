@@ -3,26 +3,30 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
-	"github.com/joshua468/p2p-payment-gateway/auth-service/internal"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/joshua468/p2p-payment-gateway/auth-service/config"
+	"github.com/joshua468/p2p-payment-gateway/auth-service/internal/handler"
+	"github.com/joshua468/p2p-payment-gateway/auth-service/internal/middleware"
+	"github.com/joshua468/p2p-payment-gateway/auth-service/internal/repository"
+	"github.com/joshua468/p2p-payment-gateway/auth-service/internal/service"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
-	dsn := os.Getenv("DB_DSN")
-	jwtSecret := os.Getenv("JWT_SECRET")
+	cfg := config.LoadConfig()
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("failed to connect to the database: %v", err)
-	}
+	// Initialize repository, service, and handler
+	authRepo := repository.NewAuthRepository(cfg)
+	authService := service.NewAuthService(authRepo, cfg)
+	authHandler := handler.NewAuthHandler(authService)
 
-	authHandler := handler.NewAuthHandler(db, jwtSecret)
+	// Setup router and middleware
+	router := mux.NewRouter()
+	router.Use(middleware.AuthMiddleware(cfg.JWTSecret)) // Apply middleware globally
 
-	http.HandleFunc("/register", authHandler.Register)
-	http.HandleFunc("/login", authHandler.Login)
+	authHandler.RegisterRoutes(router)
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Printf("Auth service running on port %s", cfg.Port)
+	log.Fatal(http.ListenAndServe(":"+cfg.Port, router))
 }
